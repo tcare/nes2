@@ -173,9 +173,15 @@ void CPU::Execute() {
     case OP_ADC_ABSX:
     case OP_ADC_ABSY:
     case OP_ADC_INDX:
-    case OP_ADC_INDY:
-
+    case OP_ADC_INDY: {
+        uint16_t result = A + operand + P.test(Flag_Carry);
+        P.set(Flag_Negative, result & NEGATIVE_BIT);
+        P.set(Flag_Overflow, (A ^ result) & ( operand ^ result) & NEGATIVE_BIT);
+        P.set(Flag_Carry, result > 0xFF);
+        A = result & 0xFF;
+        P.set(Flag_Zero, A == 0);
         break;
+    }
 
     // AND - Logical AND
     case OP_AND_IMM:
@@ -198,8 +204,8 @@ void CPU::Execute() {
     case OP_ASL_ZPX:
     case OP_ASL_ABS:
     case OP_ASL_ABSX:
+        P.set(Flag_Carry, operand & NEGATIVE_BIT);
         operand <<= 1;
-        P.set(Flag_Carry, operand & CARRY_BIT);
         P.set(Flag_Negative, operand & NEGATIVE_BIT);
         break;
 
@@ -254,10 +260,9 @@ void CPU::Execute() {
     // BIT - Bit Test
     case OP_BIT_ZP:
     case OP_BIT_ABS:
-        operand &= A;
         P.set(Flag_Negative, operand & NEGATIVE_BIT);
         P.set(Flag_Overflow, operand & OVERFLOW_BIT);
-        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Zero, (operand & A) == 0);
         break;
 
     // BRK - Force Interrupt
@@ -307,7 +312,7 @@ void CPU::Execute() {
     // PHP - Push Processor Status
     case OP_PHP_IMP:
         // B4 flag is implicitly set on push
-        Push(P.to_ulong() | Flag_B4);
+        Push(P.to_ulong() | (1 << Flag_B4));
         break;
     
     // PLP - Pull Processor Status
@@ -512,6 +517,9 @@ void CPU::Execute() {
     case OP_LDY_ZPX:
     case OP_LDY_ABS:
     case OP_LDY_ABSX:
+        Y = operand;
+        P.set(Flag_Negative, Y & NEGATIVE_BIT);
+        P.set(Flag_Zero, Y == 0);
         break;
     
     // LSR - Logical Shift Right
@@ -563,11 +571,15 @@ void CPU::Execute() {
     case OP_SBC_ABSX:
     case OP_SBC_ABSY:
     case OP_SBC_INDX:
-    case OP_SBC_INDY:
-        A -= operand;
+    case OP_SBC_INDY: {
+        int16_t result = static_cast<int8_t>(A) - operand - (1 - P.test(Flag_Carry));
+        P.set(Flag_Negative, result & NEGATIVE_BIT);
+        P.set(Flag_Overflow, result < INT8_MIN || result > INT8_MAX);
+        A = result & 0xFF;
+        P.set(Flag_Carry, static_cast<int8_t>(A) > -1);
         P.set(Flag_Zero, A == 0);
-        P.set(Flag_Negative, A & NEGATIVE_BIT);
-        break;
+    }
+    break;
     
     // STA - Store Accumulator
     case OP_STA_ZP:

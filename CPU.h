@@ -77,7 +77,7 @@ private:
     uint16_t PC; // Program counter
 
     const uint8_t NEGATIVE_BIT = 0b1000'0000;
-    const uint8_t CARRY_BIT = 0b1000'0000;
+    //const uint16_t CARRY_BIT = 0b1'0000'0000;
     const uint8_t OVERFLOW_BIT = 0b0100'0000;
 
 #include "InstrTable.h"

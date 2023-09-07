@@ -204,7 +204,7 @@ InstrData InstrDataTable[256] = {
     /* 0x8D */ { "STA", Addr_Absolute,    false, 4,     0,         "Store Accumulator in Memory" },
     /* 0x8E */ { "STX", Addr_Absolute,    false, 4,     0,         "Store Index X in Memory" },
     /* 0x8F */ { "SAX*", Addr_Absolute,    true,  4,     0,        "Illegal" },
-    /* 0x90 */ { "BBC", Addr_Relative,    false,  2,     1,        "Branch if Bit Clear" },
+    /* 0x90 */ { "BCC", Addr_Relative,    false,  2,     1,        "Branch if Carry Clear" },
     /* 0x91 */ { "STA", Addr_IndirY,      false, 6,     0,         "Store Accumulator in Memory" },
     /* 0x92 */ { "HLT*", Addr_Illegal,     true,  0,     0,        "Illegal" },
     /* 0x93 */ { "SHA*", Addr_IndirY,      true,  6,     0,        "Illegal" },
