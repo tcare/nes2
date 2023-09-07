@@ -2,7 +2,7 @@
 // https://www.nesdev.org/wiki/CPU_power_up_state#At_power-up
 void CPU::PowerOn() {
     SPDLOG_INFO("CPU power up");
-    P = 0x34; // IRQ Disabled
+    P = 0x24; // IRQ Disabled
     A = 0x00;
     X = 0x00;
     Y = 0x00;
@@ -24,17 +24,23 @@ void CPU::Reset() {
     ReadResetVector();
 }
 void CPU::Execute() {
+    // Save the offset before PC gets messed with
+    const auto instrOffset = PC;
+
     // Read opcode
     auto opcode = mmu.Read(PC);
-    SPDLOG_TRACE("PC = {:#x}", PC);
+    SPDLOG_TRACE("PC = {:#04X}", PC);
 
     // Read addressing mode
     auto addrMode = InstrDataTable[opcode].mode;
 
     VERIFY(!InstrDataTable[opcode].illegal);
 
-    // Read operand
+    // Increment PC before address calculations
     auto operandSize = AddrModeDataTable[addrMode].size;
+    PC += operandSize;
+
+    // Read operand
     uint8_t operand = 0;
     uint16_t operand16 = 0;
     switch (addrMode) {
@@ -47,42 +53,44 @@ void CPU::Execute() {
         operand = A;
         break;
     case Addr_Immediate:
-        // Operand is immediately after PC
-        operand = mmu.Read(PC);
+        // Operand is immediately after opcode
+        operand = mmu.Read(instrOffset + 1);
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, operand);
         break;
 
     case Addr_ZeroPage: {
         // Operand address is immediately after
-        auto operandAddress = mmu.Read(PC);
+        auto operandAddress = mmu.Read(instrOffset+1);
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, operandAddress);
         operand = mmu.Read(operandAddress);
+        operand16 = operandAddress;
         }
         break;
 
     case Addr_Absolute: {
         // Operand is next 16 bits after opcode
-        auto addrUpper = mmu.Read(PC+1) << 8;
-        auto addrLower = mmu.Read(PC+2);
-        auto effectiveAddr = addrUpper | addrLower;
-        SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, addrLower, addrUpper);
-        operand = mmu.Read(effectiveAddr);
+        auto addrLower = mmu.Read(instrOffset+1);
+        auto addrUpper = mmu.Read(instrOffset+2) << 8;
+        operand16 = addrUpper | addrLower;
+        SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, operand16);
+        operand = mmu.Read(operand16);
         }
         break;
 
     case Addr_Relative: {
         // 8 bit signed offset relative to PC
-        operand = PC;
-        int8_t offset = mmu.Read(PC);
-        SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, offset);
-        operand += offset;
+        operand16 = PC;
+        int8_t offset = mmu.Read(instrOffset + 1);
+        operand16 += offset;
+        SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, operand16);
+        
         }
         break;
 
     case Addr_Indirect: {
         // Operand is at address in the next 16 bits after opcode
-        auto indirectUpper = mmu.Read(PC+1) << 8;
-        auto indirectLower = mmu.Read(PC+2);
+        auto indirectUpper = mmu.Read(instrOffset + 1) << 8;
+        auto indirectLower = mmu.Read(instrOffset + 2);
         auto indirectAddr = indirectUpper | indirectLower;
         auto derefUpper = mmu.Read(indirectAddr) << 8;
         auto derefLower = mmu.Read(indirectAddr+1);
@@ -94,7 +102,7 @@ void CPU::Execute() {
 
     // Indexed addressing modes
     case Addr_ZeroPageX: {  // Zero page indexed, val = PEEK((arg + X) % 256)
-        auto zpxAddr = mmu.Read(PC);
+        auto zpxAddr = mmu.Read(instrOffset + 1);
         auto zpxEffectiveAddr = (zpxAddr + X) % 256;
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic);
         operand = mmu.Read(zpxEffectiveAddr);
@@ -102,7 +110,7 @@ void CPU::Execute() {
         break;
     
     case Addr_ZeroPageY: {   // Zero page indexed, val = PEEK((arg + Y) % 256)
-        auto zpyAddr = mmu.Read(PC);
+        auto zpyAddr = mmu.Read(instrOffset + 1);
         auto zpyEffectiveAddr = (zpyAddr + Y) % 256;
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic);
         operand = mmu.Read(zpyEffectiveAddr);
@@ -110,21 +118,21 @@ void CPU::Execute() {
         break;
 
     case Addr_AbslX: {       // Absolute indexed, val = PEEK(arg + X)
-        auto abslXAddr = mmu.Read(PC) + X;
+        auto abslXAddr = mmu.Read(instrOffset+1) + X;
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, abslXAddr);
         operand = mmu.Read(abslXAddr);
         }
         break;
 
     case Addr_AbslY: {      // Absolute indexed, val = PEEK(arg + Y)
-        auto abslYAddr = mmu.Read(PC) + Y;
+        auto abslYAddr = mmu.Read(instrOffset+1) + Y;
         SPDLOG_TRACE(fmt::runtime(AddrModeDataTable[addrMode].fmt), InstrDataTable[opcode].mnemonic, abslYAddr);
         operand = mmu.Read(abslYAddr);
         }
         break;
 
     case Addr_IndirX: {      // Indexed indirect, val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
-        auto indirXAddr = mmu.Read(PC) + X;
+        auto indirXAddr = mmu.Read(instrOffset+1) + X;
         auto indirXEffectiveAddr = (indirXAddr + X) % 256;
         auto indirXUpper = mmu.Read(indirXEffectiveAddr) << 8;
         auto indirXLower = mmu.Read(indirXEffectiveAddr+1);
@@ -135,7 +143,7 @@ void CPU::Execute() {
         break;
 
     case Addr_IndirY: {     // Indexed indirect, val = PEEK(PEEK(arg) + PEEK((arg + 1) % 256) * 256 + Y)
-        auto indirYAddr = mmu.Read(PC);
+        auto indirYAddr = mmu.Read(instrOffset+1);
         auto indirYUpper = mmu.Read(indirYAddr) << 8;
         auto indirYLower = mmu.Read(indirYAddr+1);
         auto derefYAddr = indirYUpper | indirYLower;
@@ -151,6 +159,9 @@ void CPU::Execute() {
         break;
     }
 
+    cycles += InstrDataTable[opcode].cycles;
+
+    PrintNESTestLine(instrOffset);
 
     // Execute instruction
     switch (opcode) {
@@ -175,10 +186,8 @@ void CPU::Execute() {
     case OP_AND_ABSY:
     case OP_AND_INDX:
     case OP_AND_INDY: {
-        uint16_t result = A + operand + P.test(Flag_Carry);
-        P.set(Flag_Negative, result & NEGATIVE_BIT);
-        P.set(Flag_Overflow, (A ^ result) & (operand ^ result) & NEGATIVE_BIT);
-        A = result & 0xFF;
+        A &= operand;
+        P.set(Flag_Negative, A & NEGATIVE_BIT);
         P.set(Flag_Zero, A == 0);
         break;
     }
@@ -197,7 +206,7 @@ void CPU::Execute() {
     // BCC - Branch if Carry Clear
     case OP_BCC_REL:
         if (!P.test(Flag_Carry))
-            PC += operand;
+            PC = operand16;
         break;
     
     // BCS - Branch if Carry Set
@@ -253,7 +262,7 @@ void CPU::Execute() {
 
     // BRK - Force Interrupt
     case OP_BRK_IMP:
-        Push(PC);
+        PushAddr(PC);
         Push(P.to_ulong());
         P.set(Flag_InterruptDisable);
         PC = Addr_BRK;
@@ -291,27 +300,32 @@ void CPU::Execute() {
     // PLA - Pull Accumulator
     case OP_PLA_IMP:
         A = Pop();
+        P.set(Flag_Zero, A == 0);
+        P.set(Flag_Negative, A & NEGATIVE_BIT);
         break;
 
     // PHP - Push Processor Status
     case OP_PHP_IMP:
-        Push(P.to_ulong());
+        // B4 flag is implicitly set on push
+        Push(P.to_ulong() | Flag_B4);
         break;
     
     // PLP - Pull Processor Status
     case OP_PLP_IMP:
+        // B5 flag is implicitly set on pull
         P = Pop();
+        P.set(Flag_B5);
         break;
     
     // RTI - Return from Interrupt
     case OP_RTI_IMP:
         P = Pop();
-        PC = Pop();
+        PC = PopAddr();
         break;
 
     // RTS - Return from Subroutine
     case OP_RTS_IMP:
-        PC = PopAddr() + 1;
+        PC = PopAddr();
         break;
 
     // SEC - Set Carry Flag
@@ -463,7 +477,7 @@ void CPU::Execute() {
 
     // JSR - Jump to Subroutine
     case OP_JSR_ABS:
-        Push(PC);
+        PushAddr(PC);
         PC = operand16;
         break;
     
@@ -583,7 +597,7 @@ void CPU::Execute() {
 
     // Update flags
 
-    PC += operandSize;
+
 }
 void CPU::Run() {
     while (running) {
@@ -595,16 +609,19 @@ void CPU::Pause() {
 }
 void CPU::ReadResetVector() {
     // Little Endian
-    PC = mmu.Read(Addr_Reset) | (mmu.Read(Addr_Reset + 1) << 8);
+    //PC = mmu.Read(Addr_Reset) | (mmu.Read(Addr_Reset + 1) << 8);
+    PC = 0xC000;
     SPDLOG_TRACE(fmt::runtime("PC initialized from reset vector to {:#x}"), PC);
 }
 
 void CPU::Push(uint8_t value) {
+    SPDLOG_TRACE("Push to offset {:#02X} ({:#04X}) = {:#02X}", S, Addr_Stack + S, value);
     mmu.Write(Addr_Stack + S, value);
     S--;
 }
 
 void CPU::PushAddr(Addr address) {
+    SPDLOG_TRACE("Pushing address to stack: {:#04X}", address);
     uint8_t upper = address >> 8;
     uint8_t lower = address & 0xFF;
     Push(upper);
@@ -612,13 +629,175 @@ void CPU::PushAddr(Addr address) {
 }
 
 uint8_t CPU::Pop() {
-    auto value = mmu.Read(Addr_Stack + S);
     S++;
+    auto value = mmu.Read(Addr_Stack + S);
+    SPDLOG_TRACE("Popping value {:#02X} from stack offset {:#02X} = {:#04X}", value, S, Addr_Stack + S);
     return value;
 }
 
 Addr CPU::PopAddr() {
     auto lower = Pop();
     auto upper = Pop();
-    return (upper << 8) | lower;
+    Addr addr = (upper << 8) | lower;
+    SPDLOG_TRACE("Popping address from stack: {:#04X}", addr);
+    return addr;
+}
+
+void CPU::PrintNESTestLine(Addr instrOffset) {
+    //C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
+    // Print offset
+    nesTestOutput.print("{:04X}  ", instrOffset);
+    // Print opcode based on instruction length
+    auto opcode = mmu.Read(instrOffset);
+    auto instr = InstrDataTable[opcode];
+    auto addrMode = AddrModeDataTable[instr.mode];
+    switch (addrMode.size) {
+    case 1:
+        nesTestOutput.print("{:02X}        ", opcode);
+        break;
+    case 2:
+        nesTestOutput.print("{:02X} {:02X}     ", opcode, mmu.Read(instrOffset + 1));
+        break;
+    case 3:
+        nesTestOutput.print("{:02X} {:02X} {:02X}  ", opcode, mmu.Read(instrOffset + 1), mmu.Read(instrOffset + 2));
+        break;
+    }
+
+    // Read operand
+    uint8_t operand = 0;
+    switch (instr.mode) {
+    case Addr_Implicit:
+        // No operand
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        nesTestOutput.print("                             ");
+        break;
+    case Addr_Accumulator:
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        nesTestOutput.print("                       ");
+        break;
+    case Addr_Immediate:
+        // Operand is immediately after PC
+        operand = mmu.Read(instrOffset+1);
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, operand);
+        nesTestOutput.print("                        ");
+        break;
+
+    case Addr_ZeroPage: {
+        // Operand address is immediately after
+        auto operandAddress = mmu.Read(instrOffset+1);
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, operandAddress);
+        nesTestOutput.print("                         ");
+        }
+        break;
+
+    case Addr_Absolute: {
+        // Operand is next 16 bits after opcode
+        auto addrLower = mmu.Read(instrOffset+1);
+        auto addrUpper = mmu.Read(instrOffset+2) << 8;
+        auto effectiveAddr = addrUpper | addrLower;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, effectiveAddr);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    case Addr_Relative: {
+        // 8 bit signed offset relative to PC
+        int8_t offset = mmu.Read(instrOffset+1);
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, PC + offset);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    case Addr_Indirect: {
+        // Operand is at address in the next 16 bits after opcode
+        auto indirectUpper = mmu.Read(instrOffset+1) << 8;
+        auto indirectLower = mmu.Read(instrOffset+2);
+        auto indirectAddr = indirectUpper | indirectLower;
+        auto derefUpper = mmu.Read(indirectAddr) << 8;
+        auto derefLower = mmu.Read(indirectAddr+1);
+        auto derefAddr = derefUpper | derefLower;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        operand = mmu.Read(derefAddr);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    // Indexed addressing modes
+    case Addr_ZeroPageX: {  // Zero page indexed, val = PEEK((arg + X) % 256)
+        auto zpxAddr = mmu.Read(instrOffset+1);
+        auto zpxEffectiveAddr = (zpxAddr + X) % 256;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        operand = mmu.Read(zpxEffectiveAddr);
+        nesTestOutput.print("                        ");
+        }
+        break;
+    
+    case Addr_ZeroPageY: {   // Zero page indexed, val = PEEK((arg + Y) % 256)
+        auto zpyAddr = mmu.Read(instrOffset+1);
+        auto zpyEffectiveAddr = (zpyAddr + Y) % 256;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        operand = mmu.Read(zpyEffectiveAddr);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    case Addr_AbslX: {       // Absolute indexed, val = PEEK(arg + X)
+        auto abslXAddr = mmu.Read(instrOffset+1) + X;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, abslXAddr);
+        operand = mmu.Read(abslXAddr);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    case Addr_AbslY: {      // Absolute indexed, val = PEEK(arg + Y)
+        auto abslYAddr = mmu.Read(instrOffset+1) + Y;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic, abslYAddr);
+        operand = mmu.Read(abslYAddr);
+        nesTestOutput.print("                       ");
+        }
+        break;
+
+    case Addr_IndirX: {      // Indexed indirect, val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
+        auto indirXAddr = mmu.Read(instrOffset+1) + X;
+        auto indirXEffectiveAddr = (indirXAddr + X) % 256;
+        auto indirXUpper = mmu.Read(indirXEffectiveAddr) << 8;
+        auto indirXLower = mmu.Read(indirXEffectiveAddr+1);
+        auto derefXAddr = indirXUpper | indirXLower;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        nesTestOutput.print("                       ");
+        operand = mmu.Read(derefXAddr);
+        }
+        break;
+
+    case Addr_IndirY: {     // Indexed indirect, val = PEEK(PEEK(arg) + PEEK((arg + 1) % 256) * 256 + Y)
+        auto indirYAddr = mmu.Read(instrOffset+1);
+        auto indirYUpper = mmu.Read(indirYAddr) << 8;
+        auto indirYLower = mmu.Read(indirYAddr+1);
+        auto derefYAddr = indirYUpper | indirYLower;
+        auto indirYEffectiveAddr = derefYAddr + Y;
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        nesTestOutput.print("                       ");
+        operand = mmu.Read(indirYEffectiveAddr);
+        }
+        break;
+    
+    case Addr_Illegal:
+        nesTestOutput.print(fmt::runtime(addrMode.fmt), InstrDataTable[opcode].mnemonic);
+        nesTestOutput.print("                       ");
+        break;
+    }
+
+    // Print mnemonic format of instruction and add whitespace to align
+    // eg. "STX $00 = 00                    "
+
+    // Print registers
+    nesTestOutput.print("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} ", A, X, Y, P.to_ulong(), S);
+
+    // Print PPU state
+    nesTestOutput.print("PPU:{:3d},{:3d} ", 0, 0);
+
+    // Print cycle count
+    nesTestOutput.print("CYC:{}\n", cycles);
+
+    nesTestOutput.flush();
 }

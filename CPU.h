@@ -1,9 +1,18 @@
 #include "MMU.h"
 
+#include <fmt/format.h>
+#include <fmt/os.h>
+
 class CPU {
 public:
-    CPU(MMU& mmu) : mmu(mmu) {
+    CPU(MMU& mmu) :
+        nesTestOutput(fmt::output_file("nestest.log")),
+        mmu(mmu) {
         SPDLOG_INFO("CPU created");
+    }
+
+    ~CPU() {
+        SPDLOG_INFO("CPU destroyed");
     }
 
     void PowerOn();
@@ -30,14 +39,19 @@ private:
     uint8_t Pop();
     Addr PopAddr();
 
+    fmt::ostream nesTestOutput;
+    void PrintNESTestLine(Addr instrOffset);
+
     bool running = true;
+    size_t cycles = 0;
 
     enum StatusFlags {
         Flag_Carry = 0,
         Flag_Zero = 1,
         Flag_InterruptDisable = 2,
         Flag_Decimal = 3,
-        Flag_B = 4,
+        Flag_B4 = 4,
+        Flag_B5 = 5,
         Flag_Overflow = 6,
         Flag_Negative = 7
     };

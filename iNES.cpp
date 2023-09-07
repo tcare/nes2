@@ -17,20 +17,15 @@ iNES::iNES(const char *path) {
         throw std::runtime_error("File is too large");
     }
 
-    auto bytesLeft = fileSize;
-
     // Read the header
     std::ifstream file(path, std::ios::binary);
     file.read(reinterpret_cast<char *>(&header), sizeof(header));
 
     VERIFY(file, "Failed to read header");
 
-    bytesLeft -= sizeof(header);
-
     if (header.hasTrainer()) {
         file.read(reinterpret_cast<char *>(&trainer), sizeof(trainer));
         VERIFY(file, "Failed to read trainer");
-        bytesLeft -= sizeof(trainer);
     }
 
     if (header.prgRomChunks == 0) {
@@ -42,7 +37,6 @@ iNES::iNES(const char *path) {
     prgRom.resize(prgRomSize);
     file.read(reinterpret_cast<char*>(prgRom.data()), prgRomSize);
     VERIFY(file, "Failed to read PRG ROM");
-    bytesLeft -= prgRomSize;
 
     // Read the CHR ROM
     if (header.chrRomChunks > 0) {
@@ -50,7 +44,6 @@ iNES::iNES(const char *path) {
         chrRom.resize(chrRomSize);
         file.read(reinterpret_cast<char*>(chrRom.data()), chrRomSize);
         VERIFY(file, "Failed to read CHR ROM");
-        bytesLeft -= chrRomSize;
     }
 
     // TODO: Read the PlayChoice-10 data

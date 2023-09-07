@@ -24,7 +24,7 @@ void Cartridge::LoadFromPath(const char *path) {
             VERIFY(false, "Unsupported mapper");
     }
 
-    SPDLOG_INFO("Cartridge loading mapper {}", ines->GetHeader().GetMapper());
+    SPDLOG_INFO("Cartridge loading mapper {}", (uint8_t)ines->GetHeader().GetMapper());
     mapper->LoadFromINES(*ines);
 
     loaded = true;

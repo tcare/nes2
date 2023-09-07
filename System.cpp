@@ -2,7 +2,9 @@
 
 #include "System.h"
 
-System::System() : mmu(cartridge), cpu(mmu) {
+System::System() :
+    cpu(mmu),
+    mmu(cartridge) {
     SPDLOG_INFO("System created");
 }
 

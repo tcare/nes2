@@ -50,9 +50,9 @@ void MMC1::Write(uint16_t address, uint8_t value) {
                 throw std::runtime_error("MMC1::Write() not implemented");
 
                 // Bits 14 and 13 of the address select the register.
-                uint8_t reg = (address >> 13) & 0b11;
+                //uint8_t reg = (address >> 13) & 0b11;
                 // Copy D0 and the SR to a bank register.
-                uint8_t bankReg = (shiftRegister.to_ulong() & 0b11110) | (value & 0b1);
+                //uint8_t bankReg = (shiftRegister.to_ulong() & 0b11110) | (value & 0b1);
                 // Write the bank register to the appropriate register.
                 
                 //  Clear the shift register.

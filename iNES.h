@@ -36,6 +36,7 @@ public:
             MapperType_NROM = 0,
             MapperType_MMC1 = 1
         };
+        auto format_as(MapperType f) { return fmt::underlying(f); }
 
         char name[4];
         uint8_t prgRomChunks;

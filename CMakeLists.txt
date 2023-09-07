@@ -8,7 +8,14 @@ set(CMAKE_CXX_EXTENSIONS false)
 
 include(FetchContent)
 
-# Fetch and add spdlog
+set(FMT_TEST FF CACHE INTERNAL "disabling fmt tests")
+FetchContent_Declare(
+    fmt
+    GIT_REPOSITORY https://github.com/fmtlib/fmt
+    GIT_TAG 10.0.0
+)
+FetchContent_MakeAvailable(fmt)
+
 FetchContent_Declare(
     assert
     GIT_REPOSITORY https://github.com/jeremy-rifkin/libassert.git
@@ -16,12 +23,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(assert)
 
+set(SPDLOG_FMT_EXTERNAL 1)
 FetchContent_Declare(
   spdlog
   GIT_REPOSITORY https://github.com/gabime/spdlog.git
   GIT_TAG        v1.12.0
 )
 FetchContent_MakeAvailable(spdlog)
+
+if (MSVC)
+    # warning level 4 and all warnings as errors
+    add_compile_options(/W4 /WX)
+else()
+    # lots of warnings and all warnings as errors
+    add_compile_options(-Wall -Wextra -pedantic -Werror)
+
+    # disable warnings for spdlog
+    add_compile_options(-Wno-gnu-zero-variadic-macro-arguments)
+
+    # fast paced development, TODO: Remove
+    add_compile_options(-Wno-unused-parameter)
+endif()
 
 add_executable(nes2
     main.cpp
@@ -42,6 +64,7 @@ target_precompile_headers(nes2
 target_link_libraries(nes2
   PRIVATE
     assert
+    fmt::fmt-header-only
     spdlog::spdlog
 )
 

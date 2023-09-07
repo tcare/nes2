@@ -36,17 +36,17 @@ AddrModeData AddrModeDataTable[13] = {
     // Mode enum        Size Mnemonic Name           Fmt String    Description
     { Addr_Implicit,    1,   "imp",   "Implicit",    "{}",             "Implicit" },
     { Addr_Accumulator, 1,   "ACC",   "Accumulator", "{} A",           "Accumulator" },
-    { Addr_Immediate,   2,   "IMM",   "Immediate",   "{} #${:x}",      "Immediate" },
-    { Addr_ZeroPage,    2,   "ZP",    "Zero Page",   "{} ${:x}",       "Zero Page" },
-    { Addr_Absolute,    3,   "ABS",   "Absolute",    "{} ${:x}{:x}",   "Absolute" },
-    { Addr_Relative,    2,   "REL",   "Relative",    "{} ${:x}",       "Relative" },
-    { Addr_Indirect,    3,   "IND",   "Indirect",    "{} (${:x}{:x})", "Indirect" },
-    { Addr_ZeroPageX,   2,   "ZPX",   "Zero Page X", "{} ${:x},X",     "Zero Page X" },
-    { Addr_ZeroPageY,   2,   "ZPY",   "Zero Page Y", "{} ${:x},Y",     "Zero Page Y" },
-    { Addr_AbslX,       3,   "ABX",   "Absolute X",  "{} ${:x},X",     "Absolute X" },
-    { Addr_AbslY,       3,   "ABY",   "Absolute Y",  "{} ${:x},Y",     "Absolute Y" },
-    { Addr_IndirX,      2,   "IDX",   "Indexed X",   "{} (${:x},X)",   "Indexed X" },
-    { Addr_IndirY,      2,   "IDY",   "Indexed Y",   "{} (${:x}),Y",   "Indexed Y" }
+    { Addr_Immediate,   2,   "IMM",   "Immediate",   "{} #${:02X}",      "Immediate" },
+    { Addr_ZeroPage,    2,   "ZP",    "Zero Page",   "{} ${:02X}",       "Zero Page" },
+    { Addr_Absolute,    3,   "ABS",   "Absolute",    "{} ${:04X}",   "Absolute" },
+    { Addr_Relative,    2,   "REL",   "Relative",    "{} ${:04X}",       "Relative" },
+    { Addr_Indirect,    3,   "IND",   "Indirect",    "{} (${:02X}{:02X})", "Indirect" },
+    { Addr_ZeroPageX,   2,   "ZPX",   "Zero Page X", "{} ${:02X},X",     "Zero Page X" },
+    { Addr_ZeroPageY,   2,   "ZPY",   "Zero Page Y", "{} ${:02X},Y",     "Zero Page Y" },
+    { Addr_AbslX,       3,   "ABX",   "Absolute X",  "{} ${:02X},X",     "Absolute X" },
+    { Addr_AbslY,       3,   "ABY",   "Absolute Y",  "{} ${:02X},Y",     "Absolute Y" },
+    { Addr_IndirX,      2,   "IDX",   "Indexed X",   "{} (${:02X},X)",   "Indexed X" },
+    { Addr_IndirY,      2,   "IDY",   "Indexed Y",   "{} (${:02X}),Y",   "Indexed Y" }
 };
 
 struct InstrData {
@@ -204,7 +204,7 @@ InstrData InstrDataTable[256] = {
     /* 0x8D */ { "STA", Addr_Absolute,    false, 4,     0,         "Store Accumulator in Memory" },
     /* 0x8E */ { "STX", Addr_Absolute,    false, 4,     0,         "Store Index X in Memory" },
     /* 0x8F */ { "SAX*", Addr_Absolute,    true,  4,     0,        "Illegal" },
-    /* 0x90 */ { "BBC", Addr_Relative,    true,  2,     1,         "Branch if Bit Clear" },
+    /* 0x90 */ { "BBC", Addr_Relative,    false,  2,     1,        "Branch if Bit Clear" },
     /* 0x91 */ { "STA", Addr_IndirY,      false, 6,     0,         "Store Accumulator in Memory" },
     /* 0x92 */ { "HLT*", Addr_Illegal,     true,  0,     0,        "Illegal" },
     /* 0x93 */ { "SHA*", Addr_IndirY,      true,  6,     0,        "Illegal" },
