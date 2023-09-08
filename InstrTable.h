@@ -33,20 +33,20 @@ struct AddrModeData {
 };
 
 AddrModeData AddrModeDataTable[13] = {
-    // Mode enum        Size Mnemonic Name           Fmt String    Description
-    { Addr_Implicit,    1,   "imp",   "Implicit",    "{}",             "Implicit" },
-    { Addr_Accumulator, 1,   "ACC",   "Accumulator", "{} A",           "Accumulator" },
-    { Addr_Immediate,   2,   "IMM",   "Immediate",   "{} #${:02X}",      "Immediate" },
-    { Addr_ZeroPage,    2,   "ZP",    "Zero Page",   "{} ${:02X}",       "Zero Page" },
-    { Addr_Absolute,    3,   "ABS",   "Absolute",    "{} ${:04X}",   "Absolute" },
-    { Addr_Relative,    2,   "REL",   "Relative",    "{} ${:04X}",       "Relative" },
-    { Addr_Indirect,    3,   "IND",   "Indirect",    "{} (${:02X}{:02X})", "Indirect" },
-    { Addr_ZeroPageX,   2,   "ZPX",   "Zero Page X", "{} ${:02X},X",     "Zero Page X" },
-    { Addr_ZeroPageY,   2,   "ZPY",   "Zero Page Y", "{} ${:02X},Y",     "Zero Page Y" },
-    { Addr_AbslX,       3,   "ABX",   "Absolute X",  "{} ${:02X},X",     "Absolute X" },
-    { Addr_AbslY,       3,   "ABY",   "Absolute Y",  "{} ${:02X},Y",     "Absolute Y" },
-    { Addr_IndirX,      2,   "IDX",   "Indexed X",   "{} (${:02X},X)",   "Indexed X" },
-    { Addr_IndirY,      2,   "IDY",   "Indexed Y",   "{} (${:02X}),Y",   "Indexed Y" }
+    // Mode enum        Size Mnemonic Name           Nestest Fmt String    Description
+    { Addr_Implicit,    1,   "imp",   "Implicit",    "{}",                                        "Implicit" },
+    { Addr_Accumulator, 1,   "ACC",   "Accumulator", "{} A",                                      "Accumulator" },
+    { Addr_Immediate,   2,   "IMM",   "Immediate",   "{} #${:02X}",                               "Immediate" },
+    { Addr_ZeroPage,    2,   "ZP",    "Zero Page",   "{} ${:02X} = ${:02X}",                      "Zero Page" },
+    { Addr_Absolute,    3,   "ABS",   "Absolute",    "{} ${:04X} = ${:02X}",                      "Absolute" },
+    { Addr_Relative,    2,   "REL",   "Relative",    "{} ${:04X}",                                "Relative" },
+    { Addr_Indirect,    3,   "IND",   "Indirect",    "{} (${:04X}) = {:04X}",                     "Indirect" },
+    { Addr_ZeroPageX,   2,   "ZPX",   "Zero Page X", "{} ${:02X},X @ ${:02X} = {:02X}",           "Zero Page X" },
+    { Addr_ZeroPageY,   2,   "ZPY",   "Zero Page Y", "{} ${:02X},Y @ ${:02X} = {:02X}",           "Zero Page Y" },
+    { Addr_AbslX,       3,   "ABX",   "Absolute X",  "{} ${:04X},X @ ${:04X} = {:02X}",           "Absolute X" },
+    { Addr_AbslY,       3,   "ABY",   "Absolute Y",  "{} ${:04X},Y @ ${:04X} = {:02X}",           "Absolute Y" },
+    { Addr_IndirX,      2,   "IDX",   "Indexed X",   "{} (${:02X},X) @ {:02X} = {:04X} = {:02X}", "Indexed X" },
+    { Addr_IndirY,      2,   "IDY",   "Indexed Y",   "{} (${:02X},Y) @ {:02X} = {:04X} = {:02X}", "Indexed Y" }
 };
 
 struct InstrData {

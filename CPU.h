@@ -1,12 +1,11 @@
 #include "MMU.h"
 
-#include <fmt/format.h>
-#include <fmt/os.h>
+#include <fstream>
 
 class CPU {
 public:
     CPU(MMU& mmu) :
-        nesTestOutput(fmt::output_file("nestest.log")),
+        nesTestOutput("nestest.log", std::ofstream::out),
         mmu(mmu) {
         SPDLOG_INFO("CPU created");
     }
@@ -33,13 +32,22 @@ public:
     };
 
 private:
+
+#include "InstrTable.h"
+
     void ReadResetVector();
+
+    void FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset);
+    void ExecInstr(uint8_t opcode);
+
     void Push(uint8_t value);
     void PushAddr(Addr address);
     uint8_t Pop();
     Addr PopAddr();
 
-    fmt::ostream nesTestOutput;
+    // Instruction string representation for NESTest
+    std::string instrToStr;
+    std::ofstream nesTestOutput;
     void PrintNESTestLine(Addr instrOffset);
 
     bool running = true;
@@ -80,6 +88,9 @@ private:
     //const uint16_t CARRY_BIT = 0b1'0000'0000;
     const uint8_t OVERFLOW_BIT = 0b0100'0000;
 
-#include "InstrTable.h"
-
+    uint8_t operand = 0;
+    Addr operandAddr = 0;
+    // Optional values immediately following the opcode, depending on addressing mode
+    uint8_t imm0 = 0;
+    uint8_t imm1 = 0;
 };
