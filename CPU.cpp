@@ -734,13 +734,13 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
     std::string ppuInfo = fmt::format("PPU:{:3d},{:3d} ", 0, 0);
 
     // Print cycle count
-    std::string cycleInfo = fmt::format("CYC:{}\n", cycles);
+    std::string cycleInfo = fmt::format("CYC:{}", cycles);
 
     //C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
     std::string fullString;
-    fullString = fmt::format("{:04X}  {:9} {:30} {} {} {}\n", instrOffset, fullOpcode, instrToStr, registers, ppuInfo, cycleInfo);
+    fullString = fmt::format("{:04X}  {:9} {:30} {} {} {}", instrOffset, fullOpcode, instrToStr, registers, ppuInfo, cycleInfo);
 
     SPDLOG_TRACE(fullString);
-    nesTestOutput << fullString;
+    nesTestOutput << fullString << std::endl;
     nesTestOutput.flush();
 }
