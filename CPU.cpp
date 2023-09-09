@@ -51,6 +51,8 @@ void CPU::Execute() {
     PrintNESTestLine(instrOffset);
 
     // Execute instruction
+    ExecInstr(opcode);
+
     if (addrMode == Addr_Accumulator) {
         A = operand;
     }
@@ -106,11 +108,15 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
     switch (addrData.size) {
     case 1:
         break;
+        imm0 = 0;
+        imm1 = 0;
     case 2:
         imm0 = mmu.Read(instrOffset + 1);
+        imm1 = 0;
         break;
     case 3:
-        imm1 = mmu.Read(instrOffset + 1);
+        imm0 = mmu.Read(instrOffset + 1);
+        imm1 = mmu.Read(instrOffset + 2);
         break;
     }
 
@@ -136,7 +142,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         // Operand address is immediately after and extended to 16-bit
         operand = mmu.Read(imm0);
         operandAddr = imm0;
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, operand, operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, A);
         }
         break;
 
@@ -146,7 +152,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         auto addrUpper = imm1 << 8;
         operandAddr = addrUpper | addrLower;
         operand = mmu.Read(operandAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, operandAddr, operand);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, operandAddr);
         }
         break;
 
@@ -740,7 +746,7 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
     std::string fullString;
     fullString = fmt::format("{:04X}  {:9} {:30} {} {} {}", instrOffset, fullOpcode, instrToStr, registers, ppuInfo, cycleInfo);
 
-    SPDLOG_TRACE(fullString);
+    SPDLOG_INFO(fullString);
     nesTestOutput << fullString << std::endl;
     nesTestOutput.flush();
 }
