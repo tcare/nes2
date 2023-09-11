@@ -36,7 +36,7 @@ void CPU::Execute() {
     // Read addressing mode
     auto addrMode = InstrDataTable[opcode].mode;
 
-    VERIFY(!InstrDataTable[opcode].illegal);
+    //VERIFY(!InstrDataTable[opcode].illegal);
 
     // Increment PC before address calculations
     auto operandSize = AddrModeDataTable[addrMode].size;
@@ -102,6 +102,11 @@ Addr CPU::PopAddr() {
 void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset) {
     auto addrData = AddrModeDataTable[addrMode];
     auto opData = InstrDataTable[opcode];
+
+    // if (opData.illegal) {
+    //     // We don't want to trigger side effects for illegal opcodes
+    //     return;
+    // }
 
     switch (addrData.size) {
     case 1:
@@ -236,7 +241,8 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         break;
     
     case Addr_Illegal:
-        throw std::runtime_error("Illegal addressing mode");
+        SPDLOG_WARN("Illegal addressing mode");
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic);
         break;
     }
 
@@ -457,14 +463,16 @@ void CPU::ExecInstr(uint8_t opcode) {
     // PHP - Push Processor Status
     case OP_PHP_IMP:
         // B4 flag is implicitly set on push
-        Push(P.to_ulong() | (1 << Flag_B4));
+        Push(P.to_ulong() | (1 << Flag_B4) | (1 << Flag_B5));
         break;
     
     // PLP - Pull Processor Status
-    case OP_PLP_IMP:
+    case OP_PLP_IMP: {
+        auto PSave = P.to_ulong() & (1 << Flag_B4);
+        P = (Pop() & 0xEF) | PSave;
         // B5 flag is implicitly set on pull
-        P = Pop();
         P.set(Flag_B5);
+        }
         break;
     
     // RTI - Return from Interrupt
@@ -534,6 +542,20 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_TXS_IMP:
         S = X;
         break;
+
+    // *DCP - Decrement Memory and Compare
+    case OP_I_DCP_ZP:
+    case OP_I_DCP_ZPX:
+    case OP_I_DCP_ABS:
+    case OP_I_DCP_ABSX:
+    case OP_I_DCP_ABSY:
+    case OP_I_DCP_INDX:
+    case OP_I_DCP_INDY:
+        --operand;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        mmu.Write(operandAddr, operand);
+        // Fallthrough to CMP
 
     // CMP - Compare
     case OP_CMP_IMM:
@@ -734,8 +756,21 @@ void CPU::ExecInstr(uint8_t opcode) {
         P.set(Flag_Negative, operand & NEGATIVE_BIT);
         break;
     }
+
+    // *ISB - Increment Memory and Subtract with Carry
+    case OP_I_ISB_ZP:
+    case OP_I_ISB_ZPX:
+    case OP_I_ISB_ABS:
+    case OP_I_ISB_ABSX:
+    case OP_I_ISB_ABSY:
+    case OP_I_ISB_INDX:
+    case OP_I_ISB_INDY:
+        ++operand;
+        mmu.Write(operandAddr, operand);
+        // Fallthrough to SBC
     
     // SBC - Subtract with Carry
+    case OP_I_SBC_IMM:
     case OP_SBC_IMM:
     case OP_SBC_ZP:
     case OP_SBC_ZPX:
@@ -776,6 +811,117 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_STY_ZPX:
     case OP_STY_ABS:
         mmu.Write(operandAddr, Y);
+        break;
+
+    //
+    // Illegal opcodes
+    //
+
+    // *LAX - Load Accumulator and X Register
+    case OP_I_LAX_ZP:
+    case OP_I_LAX_ZPY:
+    case OP_I_LAX_ABS:
+    case OP_I_LAX_ABSY:
+    case OP_I_LAX_INDX:
+    case OP_I_LAX_INDY:
+        A = X = operand;
+        P.set(Flag_Negative, X & NEGATIVE_BIT);
+        P.set(Flag_Zero, X == 0);
+        break;
+
+    // *SAX - Store Accumulator and X Register
+    case OP_I_SAX_ZP:
+    case OP_I_SAX_ZPY:
+    case OP_I_SAX_ABS:
+    case OP_I_SAX_INDX:
+        mmu.Write(operandAddr, A & X);
+        break;
+
+    // *SLO - Arithmetic Shift Left and OR
+    case OP_I_SLO_ZP:
+    case OP_I_SLO_ZPX:
+    case OP_I_SLO_ABS:
+    case OP_I_SLO_ABSX:
+    case OP_I_SLO_ABSY:
+    case OP_I_SLO_INDX:
+    case OP_I_SLO_INDY: {
+        P.set(Flag_Carry, operand & NEGATIVE_BIT);
+        operand <<= 1;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        mmu.Write(operandAddr, operand);
+        A |= operand;
+        P.set(Flag_Zero, A == 0);
+        P.set(Flag_Negative, A & NEGATIVE_BIT);
+        break;
+    }
+
+    // *RLA - Rotate Left and AND
+    case OP_I_RLA_ZP:
+    case OP_I_RLA_ZPX:
+    case OP_I_RLA_ABS:
+    case OP_I_RLA_ABSX:
+    case OP_I_RLA_ABSY:
+    case OP_I_RLA_INDX:
+    case OP_I_RLA_INDY: {
+        bool carrySave = P.test(Flag_Carry);
+        P.set(Flag_Carry, operand & 0b1000'0000);
+        operand <<= 1;
+        operand |= carrySave;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        mmu.Write(operandAddr, operand);
+        A &= operand;
+        P.set(Flag_Zero, A == 0);
+        P.set(Flag_Negative, A & NEGATIVE_BIT);
+        break;
+    }
+
+    // *SRE - Logical Shift Right and EOR
+    case OP_I_SRE_ZP:
+    case OP_I_SRE_ZPX:
+    case OP_I_SRE_ABS:
+    case OP_I_SRE_ABSX:
+    case OP_I_SRE_ABSY:
+    case OP_I_SRE_INDX:
+    case OP_I_SRE_INDY: {
+        P.set(Flag_Carry, operand & 0b1);
+        operand >>= 1;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        mmu.Write(operandAddr, operand);
+        A ^= operand;
+        P.set(Flag_Zero, A == 0);
+        P.set(Flag_Negative, A & NEGATIVE_BIT);
+        break;
+    }
+
+    // *RRA - Rotate Right and Add with Carry
+    case OP_I_RRA_ZP:
+    case OP_I_RRA_ZPX:
+    case OP_I_RRA_ABS:
+    case OP_I_RRA_ABSX:
+    case OP_I_RRA_ABSY:
+    case OP_I_RRA_INDX:
+    case OP_I_RRA_INDY: {
+        bool carrySave = P.test(Flag_Carry);
+        P.set(Flag_Carry, operand & 0b1);
+        operand >>= 1;
+        operand |= carrySave << 7;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        mmu.Write(operandAddr, operand);
+        int16_t result = static_cast<int8_t>(A) + operand + P.test(Flag_Carry);
+        P.set(Flag_Negative, result & NEGATIVE_BIT);
+        P.set(Flag_Overflow, result < INT8_MIN || result > INT8_MAX);
+        A = result & 0xFF;
+        P.set(Flag_Carry, static_cast<int8_t>(A) > -1);
+        P.set(Flag_Zero, A == 0);
+        break;
+    }
+
+    default:
+        VERIFY(InstrDataTable[opcode].illegal, "Assume NOP for illegal opcodes only");
         break;
     }
 }

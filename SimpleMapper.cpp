@@ -5,10 +5,10 @@ void SimpleMapper::Write(uint16_t address, uint8_t value) {
 }
 
 uint8_t SimpleMapper::Read(uint16_t address) {
-    if (address >= 0xC000) {
-        return prgRom->at(address - 0xC000);
+    if (address >= 0x8000) {
+        return prgRom->at((address - 0x8000) % 0x4000);
     } else {
-        throw std::runtime_error("SimpleMapper::Read: Unhandled address");
+        SPDLOG_WARN("SimpleMapper::Read: Unhandled address");
     }
     return 0;
 }
