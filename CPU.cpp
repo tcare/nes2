@@ -53,9 +53,7 @@ void CPU::Execute() {
     // Execute instruction
     ExecInstr(opcode);
 
-    if (addrMode == Addr_Accumulator) {
-        A = operand;
-    }
+    UpdateOperands(addrMode, opcode);
 }
 void CPU::Run() {
     while (running) {
@@ -142,7 +140,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         // Operand address is immediately after and extended to 16-bit
         operand = mmu.Read(imm0);
         operandAddr = imm0;
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, A);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, operand);
         }
         break;
 
@@ -167,67 +165,73 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
 
     case Addr_Indirect: {
         // Operand is at address in the next 16 bits after opcode
-        auto indirectUpper = imm0 << 8;
-        auto indirectLower = imm1;
-        Addr indirectAddr = indirectUpper | indirectLower;
-        auto derefUpper = mmu.Read(indirectAddr) << 8;
-        auto derefLower = mmu.Read(indirectAddr+1);
-        Addr derefAddr = derefUpper | derefLower;
-        operand = mmu.Read(derefAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, indirectAddr, operand);
+        auto indirectLower = imm0;
+        Addr indirectUpper = imm1 << 8;
+        Addr indirectEffectiveAddr = indirectUpper | indirectLower;
+        Addr derefLower = mmu.Read(indirectEffectiveAddr);
+        Addr derefUpperAddr = indirectEffectiveAddr + 1;
+        // Emulate 6502 bug where indirect jump wraps around page boundary
+        if (opcode == OP_JMP_IND && indirectLower == 0xFF) {
+            SPDLOG_DEBUG("6502 bug: JMP indirect wraps around page boundary");
+            derefUpperAddr -= 0x100;
+        }
+        Addr derefUpper = mmu.Read(derefUpperAddr) << 8;
+        operandAddr = derefUpper | derefLower;
+        operand = 0x00; // Unused
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, indirectEffectiveAddr, operandAddr);
         }
         break;
 
     // Indexed addressing modes
     case Addr_ZeroPageX: {  // Zero page indexed, val = PEEK((arg + X) % 256)
-        Addr zpxAddr = imm0;
-        Addr zpxEffectiveAddr = (zpxAddr + X) % 256;
-        operand = mmu.Read(zpxEffectiveAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, zpxAddr, zpxEffectiveAddr, operand);
+        operandAddr = (imm0 + X) % 256;
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, operandAddr, operand);
         }
         break;
     
     case Addr_ZeroPageY: {   // Zero page indexed, val = PEEK((arg + Y) % 256)
-        auto zpyAddr = imm0;
-        auto zpyEffectiveAddr = (zpyAddr + Y) % 256;
-        operand = mmu.Read(zpyEffectiveAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, zpyAddr, zpyEffectiveAddr, operand);
+        operandAddr = (imm0 + Y) % 256;
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, operandAddr, operand);
         }
         break;
 
     case Addr_AbslX: {       // Absolute indexed, val = PEEK(arg + X)
-        Addr abslXAddr = imm0 + X;
-        operand = mmu.Read(abslXAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, abslXAddr, operand);
+        Addr abslAddrBase = (imm0 | (imm1 << 8));
+        operandAddr = abslAddrBase + X;
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, abslAddrBase, operandAddr, operand);
         }
         break;
 
     case Addr_AbslY: {      // Absolute indexed, val = PEEK(arg + Y)
-        Addr abslYAddr = imm0 + Y;
-        operand = mmu.Read(abslYAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, abslYAddr, operand);
+        Addr abslAddrBase = (imm0 | (imm1 << 8));
+        operandAddr = abslAddrBase + Y;
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, abslAddrBase, operandAddr, operand);
         }
         break;
 
     case Addr_IndirX: {      // Indexed indirect, val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
-        auto indirXAddr = imm0 + X;
-        auto indirXEffectiveAddr = (indirXAddr + X) % 256;
-        auto indirXLower = mmu.Read(indirXEffectiveAddr);
-        auto indirXUpper = mmu.Read(indirXEffectiveAddr+1) << 8;
-        auto derefXAddr = indirXUpper | indirXLower;
-        operand = mmu.Read(derefXAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, indirXAddr, derefXAddr, operand);
+        Addr indirXAddr = (imm0 + X) % 256;
+        auto indirXLower = mmu.Read(indirXAddr);
+        Addr indirX1Addr = (imm0 + X + 1) % 256;
+        auto indirXUpper = mmu.Read(indirX1Addr) << 8;
+        operandAddr = (indirXUpper | indirXLower);
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, indirXAddr, operandAddr, operand);
         }
         break;
 
     case Addr_IndirY: {     // Indexed indirect, val = PEEK(PEEK(arg) + PEEK((arg + 1) % 256) * 256 + Y)
-        auto indirYAddr = imm0;
-        auto indirYLower = mmu.Read(indirYAddr);
-        auto indirYUpper = mmu.Read(indirYAddr+1) << 8;
+        auto indirYLower = mmu.Read(imm0);
+        auto indirYUpperAddr = (imm0 + 1) % 256;
+        auto indirYUpper = mmu.Read(indirYUpperAddr) << 8;
         auto derefYAddr = indirYUpper | indirYLower;
-        auto indirYEffectiveAddr = derefYAddr + Y;
-        operand = mmu.Read(indirYEffectiveAddr);
-        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, indirYAddr, derefYAddr, operand);
+        operandAddr = derefYAddr + Y;
+        operand = mmu.Read(operandAddr);
+        instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, derefYAddr, operandAddr, operand);
         }
         break;
     
@@ -236,6 +240,71 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         break;
     }
 
+    // Append current memory value to instruction string for non-jump absolute instructions
+    // NESTest prints it this way instead of the value to be loaded/stored
+    if (ShouldPrintOperand(opcode)) {
+        instrToStr += fmt::format(" = {:02X}", operand);
+    }
+
+}
+
+void CPU::UpdateOperands(AddrMode addrMode, uint8_t opcode) {
+    if (!InstrDataTable[opcode].updatesOperand)
+        return;
+
+    switch (addrMode) {
+    case Addr_Accumulator:
+        A = operand;
+        break;
+    case Addr_Immediate:
+        break;  
+    case Addr_ZeroPage:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_Absolute:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_Relative:
+        break;
+    case Addr_Indirect:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_ZeroPageX:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_ZeroPageY:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_AbslX:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_AbslY:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_IndirX:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_IndirY:
+        mmu.Write(operandAddr, operand);
+        break;
+    case Addr_Implicit:
+        break;
+    case Addr_Illegal:
+        break;
+    }
+}
+
+// We print the operand for all absolute addressing modes except for jumps
+bool CPU::ShouldPrintOperand(uint8_t opcode) {
+    if (InstrDataTable[opcode].mode != Addr_Absolute)
+        return false;
+    switch (opcode) {
+        case OP_JMP_ABS:
+        case OP_JSR_ABS:
+        return false;
+    default:
+        return true;
+    }
 }
 
 void CPU::ExecInstr(uint8_t opcode) {
@@ -728,7 +797,6 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
         fullOpcode = fmt::format("{:02X} {:02X} {:02X}", opcode, imm0, imm1);
         break;
     }
-
 
     // Print mnemonic format of instruction and add whitespace to align
     // eg. "STX $00 = 00                    "

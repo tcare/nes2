@@ -38,6 +38,8 @@ private:
     void ReadResetVector();
 
     void FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset);
+    void UpdateOperands(AddrMode addrMode, uint8_t opcode);
+    bool ShouldPrintOperand(uint8_t opcode);
     void ExecInstr(uint8_t opcode);
 
     void Push(uint8_t value);
