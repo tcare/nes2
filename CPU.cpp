@@ -5,20 +5,27 @@
 // https://www.nesdev.org/wiki/CPU_power_up_state#At_power-up
 void CPU::PowerOn() {
     SPDLOG_INFO("CPU power up");
+
     P = 0x24; // IRQ Disabled
     A = 0x00;
     X = 0x00;
     Y = 0x00;
     S = 0xFD;
-    mmu.Write(0x4017, 0x00);
+
     mmu.Write(0x4015, 0x00);
+    mmu.Write(0x4017, 0x00);
+
     for (Addr a = 0x4000; a <= 0x400F; ++a) {
         mmu.Write(a, 0x00);
     }
+
     for (Addr a = 0x4010; a < 0x4013; ++a) {
         mmu.Write(a, 0x00);
     }
+
     ReadResetVector();
+
+    cycles = 7;
 }
 // https://www.nesdev.org/wiki/CPU_power_up_state#After_reset
 void CPU::Reset() {
@@ -45,8 +52,6 @@ void CPU::Execute() {
     // Decode addressing mode and fill operands
     FetchOperands(addrMode, opcode, instrOffset);
 
-    cycles += InstrDataTable[opcode].cycles;
-
     // Print NESTest line for diffing/debugging
     PrintNESTestLine(instrOffset);
 
@@ -54,6 +59,8 @@ void CPU::Execute() {
     ExecInstr(opcode);
 
     UpdateOperands(addrMode, opcode);
+
+    UpdateCycleCount(opcode);
 }
 void CPU::Run() {
     while (running) {
@@ -100,13 +107,10 @@ Addr CPU::PopAddr() {
 }
 
 void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset) {
+    pageCrossed = false;
+
     auto addrData = AddrModeDataTable[addrMode];
     auto opData = InstrDataTable[opcode];
-
-    // if (opData.illegal) {
-    //     // We don't want to trigger side effects for illegal opcodes
-    //     return;
-    // }
 
     switch (addrData.size) {
     case 1:
@@ -205,6 +209,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
     case Addr_AbslX: {       // Absolute indexed, val = PEEK(arg + X)
         Addr abslAddrBase = (imm0 | (imm1 << 8));
         operandAddr = abslAddrBase + X;
+        pageCrossed = abslAddrBase >> 8 != operandAddr >> 8;
         operand = mmu.Read(operandAddr);
         instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, abslAddrBase, operandAddr, operand);
         }
@@ -213,6 +218,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
     case Addr_AbslY: {      // Absolute indexed, val = PEEK(arg + Y)
         Addr abslAddrBase = (imm0 | (imm1 << 8));
         operandAddr = abslAddrBase + Y;
+        pageCrossed = abslAddrBase >> 8 != operandAddr >> 8;
         operand = mmu.Read(operandAddr);
         instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, abslAddrBase, operandAddr, operand);
         }
@@ -220,8 +226,10 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
 
     case Addr_IndirX: {      // Indexed indirect, val = PEEK(PEEK((arg + X) % 256) + PEEK((arg + X + 1) % 256) * 256)
         Addr indirXAddr = (imm0 + X) % 256;
+        pageCrossed = imm0 >> 8 != indirXAddr >> 8;
         auto indirXLower = mmu.Read(indirXAddr);
         Addr indirX1Addr = (imm0 + X + 1) % 256;
+        pageCrossed |= imm0 >> 8 != indirX1Addr >> 8;
         auto indirXUpper = mmu.Read(indirX1Addr) << 8;
         operandAddr = (indirXUpper | indirXLower);
         operand = mmu.Read(operandAddr);
@@ -232,9 +240,11 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
     case Addr_IndirY: {     // Indexed indirect, val = PEEK(PEEK(arg) + PEEK((arg + 1) % 256) * 256 + Y)
         auto indirYLower = mmu.Read(imm0);
         auto indirYUpperAddr = (imm0 + 1) % 256;
+        pageCrossed = imm0 >> 8 != indirYUpperAddr >> 8;
         auto indirYUpper = mmu.Read(indirYUpperAddr) << 8;
         auto derefYAddr = indirYUpper | indirYLower;
         operandAddr = derefYAddr + Y;
+        pageCrossed |= derefYAddr >> 8 != operandAddr >> 8;
         operand = mmu.Read(operandAddr);
         instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, imm0, derefYAddr, operandAddr, operand);
         }
@@ -923,6 +933,24 @@ void CPU::ExecInstr(uint8_t opcode) {
     default:
         VERIFY(InstrDataTable[opcode].illegal, "Assume NOP for illegal opcodes only");
         break;
+    }
+}
+
+void CPU::UpdateCycleCount(uint8_t opcode) {
+    cycles += InstrDataTable[opcode].cycles;
+
+    // Not all instructions change cycle count based on page boundary crossing
+    if (InstrDataTable[opcode].pageCycles == 0)
+        return;
+
+    // If branch was taken, add a cycle
+    if (operandAddr == PC) {
+        cycles += 1;
+    }
+
+    // Detect if page boundary was crossed
+    if (pageCrossed) {
+        cycles += InstrDataTable[opcode].pageCycles;
     }
 }
 

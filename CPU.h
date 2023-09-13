@@ -41,6 +41,7 @@ private:
     void UpdateOperands(AddrMode addrMode, uint8_t opcode);
     bool ShouldPrintOperand(uint8_t opcode);
     void ExecInstr(uint8_t opcode);
+    void UpdateCycleCount(uint8_t opcode);
 
     void Push(uint8_t value);
     void PushAddr(Addr address);
@@ -92,6 +93,7 @@ private:
 
     uint8_t operand = 0;
     Addr operandAddr = 0;
+    bool pageCrossed = false;
     // Optional values immediately following the opcode, depending on addressing mode
     uint8_t imm0 = 0;
     uint8_t imm1 = 0;
