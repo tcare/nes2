@@ -60,7 +60,7 @@ void CPU::Execute() {
 
     UpdateOperands(addrMode, opcode);
 
-    UpdateCycleCount(opcode);
+    UpdateCycleCount(addrMode, opcode);
 }
 void CPU::Run() {
     while (running) {
@@ -102,7 +102,7 @@ Addr CPU::PopAddr() {
     auto lower = Pop();
     auto upper = Pop();
     Addr addr = (upper << 8) | lower;
-    SPDLOG_TRACE("Popping address from stack: {:#04X}", addr);
+    SPDLOG_TRACE("Popping address from stack: 0x{:04X}", addr);
     return addr;
 }
 
@@ -168,6 +168,7 @@ void CPU::FetchOperands(AddrMode addrMode, uint8_t opcode, uint16_t instrOffset)
         operandAddr = PC;
         int8_t offset = imm0;
         operandAddr += offset;
+        pageCrossed = PC >> 8 != operandAddr >> 8;
         instrToStr = fmt::format(fmt::runtime(addrData.fmt), opData.mnemonic, operandAddr);
         }
         break;
@@ -324,6 +325,28 @@ bool CPU::ShouldPrintOperand(uint8_t opcode) {
 }
 
 void CPU::ExecInstr(uint8_t opcode) {
+    // Add with carry, also used by SBC and some illegal instrs
+    auto ADC = [=]() {
+        SPDLOG_TRACE("SubOP: ADC");
+        uint16_t result = A + operand + P.test(Flag_Carry);
+        P.set(Flag_Negative, result & NEGATIVE_BIT);
+        P.set(Flag_Overflow, (A ^ result) & ( operand ^ result) & NEGATIVE_BIT);
+        P.set(Flag_Carry, result > 0xFF);
+        A = result & 0xFF;
+        P.set(Flag_Zero, A == 0);
+    };
+
+    // Right rotate, also used by some illegal instrs
+    auto ROR = [=]() {
+        SPDLOG_TRACE("SubOP: ROR");
+        bool carrySave = P.test(Flag_Carry);
+        P.set(Flag_Carry, operand & 0b1);
+        operand >>= 1;
+        operand |= carrySave << 7;
+        P.set(Flag_Zero, operand == 0);
+        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+    };
+
     switch (opcode) {
     // ADC - Add with Carry
     case OP_ADC_IMM:
@@ -334,12 +357,7 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_ADC_ABSY:
     case OP_ADC_INDX:
     case OP_ADC_INDY: {
-        uint16_t result = A + operand + P.test(Flag_Carry);
-        P.set(Flag_Negative, result & NEGATIVE_BIT);
-        P.set(Flag_Overflow, (A ^ result) & ( operand ^ result) & NEGATIVE_BIT);
-        P.set(Flag_Carry, result > 0xFF);
-        A = result & 0xFF;
-        P.set(Flag_Zero, A == 0);
+        ADC();
         break;
     }
 
@@ -495,7 +513,13 @@ void CPU::ExecInstr(uint8_t opcode) {
 
     // RTS - Return from Subroutine
     case OP_RTS_IMP:
-        PC = PopAddr() + 1;
+        PC = PopAddr();
+        if (PC == 0) {
+            // Halt
+            Pause();
+            break;
+        }
+        PC++;
         break;
 
     // SEC - Set Carry Flag
@@ -750,7 +774,7 @@ void CPU::ExecInstr(uint8_t opcode) {
         P.set(Flag_Zero, operand == 0);
         P.set(Flag_Negative, operand & NEGATIVE_BIT);
     }
-        break;
+    break;
     
     // ROR - Rotate Right
     case OP_ROR_ACC:
@@ -758,12 +782,7 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_ROR_ZPX:
     case OP_ROR_ABS:
     case OP_ROR_ABSX: {
-        bool carrySave = P.test(Flag_Carry);
-        P.set(Flag_Carry, operand & 0b1);
-        operand >>= 1;
-        operand |= carrySave << 7;
-        P.set(Flag_Zero, operand == 0);
-        P.set(Flag_Negative, operand & NEGATIVE_BIT);
+        ROR();
         break;
     }
 
@@ -789,14 +808,10 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_SBC_ABSY:
     case OP_SBC_INDX:
     case OP_SBC_INDY: {
-        int16_t result = static_cast<int8_t>(A) - operand - (1 - P.test(Flag_Carry));
-        P.set(Flag_Negative, result & NEGATIVE_BIT);
-        P.set(Flag_Overflow, result < INT8_MIN || result > INT8_MAX);
-        A = result & 0xFF;
-        P.set(Flag_Carry, static_cast<int8_t>(A) > -1);
-        P.set(Flag_Zero, A == 0);
+        operand ^= 0xFF;
+        ADC();
+        break;
     }
-    break;
     
     // STA - Store Accumulator
     case OP_STA_ZP:
@@ -914,19 +929,8 @@ void CPU::ExecInstr(uint8_t opcode) {
     case OP_I_RRA_ABSY:
     case OP_I_RRA_INDX:
     case OP_I_RRA_INDY: {
-        bool carrySave = P.test(Flag_Carry);
-        P.set(Flag_Carry, operand & 0b1);
-        operand >>= 1;
-        operand |= carrySave << 7;
-        P.set(Flag_Zero, operand == 0);
-        P.set(Flag_Negative, operand & NEGATIVE_BIT);
-        mmu.Write(operandAddr, operand);
-        int16_t result = static_cast<int8_t>(A) + operand + P.test(Flag_Carry);
-        P.set(Flag_Negative, result & NEGATIVE_BIT);
-        P.set(Flag_Overflow, result < INT8_MIN || result > INT8_MAX);
-        A = result & 0xFF;
-        P.set(Flag_Carry, static_cast<int8_t>(A) > -1);
-        P.set(Flag_Zero, A == 0);
+        ROR();
+        ADC();
         break;
     }
 
@@ -936,7 +940,7 @@ void CPU::ExecInstr(uint8_t opcode) {
     }
 }
 
-void CPU::UpdateCycleCount(uint8_t opcode) {
+void CPU::UpdateCycleCount(AddrMode addrMode, uint8_t opcode) {
     cycles += InstrDataTable[opcode].cycles;
 
     // Not all instructions change cycle count based on page boundary crossing
@@ -944,13 +948,17 @@ void CPU::UpdateCycleCount(uint8_t opcode) {
         return;
 
     // If branch was taken, add a cycle
-    if (operandAddr == PC) {
+    if (addrMode == Addr_Relative) {
+        // No branch taken, no more checks
+        if (operandAddr != PC)
+            return;
+        
         cycles += 1;
     }
 
     // Detect if page boundary was crossed
     if (pageCrossed) {
-        cycles += InstrDataTable[opcode].pageCycles;
+        cycles += 1;
     }
 }
 
@@ -972,6 +980,11 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
         break;
     }
 
+    // Prepend space for legal opcodes
+    if (!instr.illegal) {
+        instrToStr = " " + instrToStr;
+    }
+
     // Print mnemonic format of instruction and add whitespace to align
     // eg. "STX $00 = 00                    "
 
@@ -979,14 +992,14 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
     std::string registers = fmt::format("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}", A, X, Y, P.to_ulong(), S);
 
     // Print PPU state
-    std::string ppuInfo = fmt::format("PPU:{:3d},{:3d} ", 0, 0);
+    std::string ppuInfo = fmt::format("PPU:{:3d},{:3d}", 0, 0);
 
     // Print cycle count
     std::string cycleInfo = fmt::format("CYC:{}", cycles);
 
     //C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
     std::string fullString;
-    fullString = fmt::format("{:04X}  {:9} {:30} {} {} {}", instrOffset, fullOpcode, instrToStr, registers, ppuInfo, cycleInfo);
+    fullString = fmt::format("{:04X}  {:8} {:32} {} {} {}", instrOffset, fullOpcode, instrToStr, registers, ppuInfo, cycleInfo);
 
     SPDLOG_INFO(fullString);
     nesTestOutput << fullString << std::endl;

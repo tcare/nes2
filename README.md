@@ -3,7 +3,7 @@
 This is a experimental NES emulator made for fun. It's a work in progress.
 
 Current status:
-- CPU - Legal instructions working
+- CPU - 100% working with NESTest including illegal instructions. Cycle counts accurate.
 - PPU - Not yet implemented
 - MMU - Working
 - APU - Not yet implemented

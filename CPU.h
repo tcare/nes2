@@ -41,7 +41,7 @@ private:
     void UpdateOperands(AddrMode addrMode, uint8_t opcode);
     bool ShouldPrintOperand(uint8_t opcode);
     void ExecInstr(uint8_t opcode);
-    void UpdateCycleCount(uint8_t opcode);
+    void UpdateCycleCount(AddrMode addrMode, uint8_t opcode);
 
     void Push(uint8_t value);
     void PushAddr(Addr address);
