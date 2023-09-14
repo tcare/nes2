@@ -141,7 +141,7 @@ static constexpr InstrData InstrDataTable[256] = {
     /* 0x4C */ { "JMP",   Addr_Absolute,    false,  3,     0,         false,         "Jump to New Location" },
     /* 0x4D */ { "EOR",   Addr_Absolute,    false,  4,     0,         false,         "Exclusive-Or Memory with Accumulator" },
     /* 0x4E */ { "LSR",   Addr_Absolute,    false,  6,     0,         true,          "Logical Shift Right" },
-    /* 0x4F */ { "*NOP",  Addr_Absolute,    true,   6,     0,         false,         "Illegal" },
+    /* 0x4F */ { "*SRE",  Addr_Absolute,    true,   6,     0,         false,         "Illegal" },
     /* 0x50 */ { "BVC",   Addr_Relative,    false,  2,     1,         false,         "Branch if Overflow Clear" },
     /* 0x51 */ { "EOR",   Addr_IndirY,      false,  5,     1,         false,         "Exclusive-Or Memory with Accumulator" },
     /* 0x52 */ { "*NOP",  Addr_Illegal,     true,   0,     0,         false,         "Illegal" },

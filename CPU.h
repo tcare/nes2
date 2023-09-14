@@ -43,6 +43,8 @@ private:
     void ExecInstr(uint8_t opcode);
     void UpdateCycleCount(AddrMode addrMode, uint8_t opcode);
 
+    void Tick(size_t cycles);
+
     void Push(uint8_t value);
     void PushAddr(Addr address);
     uint8_t Pop();
@@ -97,4 +99,26 @@ private:
     // Optional values immediately following the opcode, depending on addressing mode
     uint8_t imm0 = 0;
     uint8_t imm1 = 0;
+
+    struct PPUEmu {
+        uint16_t scanline = 0;
+        uint16_t cycles = 0;
+
+        void Tick(size_t newCycles) {
+            cycles += newCycles;
+
+            if (cycles >= 341) {
+                cycles -= 341;
+                scanline++;
+            }
+
+            if (scanline == 241) {
+                SPDLOG_INFO("PPU::Tick() - VBLANK");
+            }
+
+            if (scanline >= 262) {
+                scanline -= 262;
+            }
+        }
+    } ppuEmu;
 };

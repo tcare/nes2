@@ -25,7 +25,7 @@ void CPU::PowerOn() {
 
     ReadResetVector();
 
-    cycles = 7;
+    Tick(7);
 }
 // https://www.nesdev.org/wiki/CPU_power_up_state#After_reset
 void CPU::Reset() {
@@ -42,8 +42,6 @@ void CPU::Execute() {
 
     // Read addressing mode
     auto addrMode = InstrDataTable[opcode].mode;
-
-    //VERIFY(!InstrDataTable[opcode].illegal);
 
     // Increment PC before address calculations
     auto operandSize = AddrModeDataTable[addrMode].size;
@@ -72,7 +70,6 @@ void CPU::Pause() {
 }
 void CPU::ReadResetVector() {
     // Little Endian
-    //PC = mmu.Read(Addr_Reset) | (mmu.Read(Addr_Reset + 1) << 8);
     PC = 0xC000;
     SPDLOG_TRACE(fmt::runtime("PC initialized from reset vector to {:#x}"), PC);
 }
@@ -941,25 +938,34 @@ void CPU::ExecInstr(uint8_t opcode) {
 }
 
 void CPU::UpdateCycleCount(AddrMode addrMode, uint8_t opcode) {
-    cycles += InstrDataTable[opcode].cycles;
+    uint8_t newCycles = 0;
+    newCycles += InstrDataTable[opcode].cycles;
 
     // Not all instructions change cycle count based on page boundary crossing
     if (InstrDataTable[opcode].pageCycles == 0)
-        return;
+        goto finally;
 
     // If branch was taken, add a cycle
     if (addrMode == Addr_Relative) {
         // No branch taken, no more checks
         if (operandAddr != PC)
-            return;
+            goto finally;
         
-        cycles += 1;
+        newCycles++;
     }
 
     // Detect if page boundary was crossed
     if (pageCrossed) {
-        cycles += 1;
+        newCycles++;
     }
+
+finally:
+    Tick(newCycles);
+}
+
+void CPU::Tick(size_t cycles) {
+    this->cycles += cycles;
+    ppuEmu.Tick(cycles * 3);
 }
 
 void CPU::PrintNESTestLine(Addr instrOffset) {
@@ -992,7 +998,7 @@ void CPU::PrintNESTestLine(Addr instrOffset) {
     std::string registers = fmt::format("A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}", A, X, Y, P.to_ulong(), S);
 
     // Print PPU state
-    std::string ppuInfo = fmt::format("PPU:{:3d},{:3d}", 0, 0);
+    std::string ppuInfo = fmt::format("PPU:{:3d},{:3d}", ppuEmu.scanline, ppuEmu.cycles);
 
     // Print cycle count
     std::string cycleInfo = fmt::format("CYC:{}", cycles);
